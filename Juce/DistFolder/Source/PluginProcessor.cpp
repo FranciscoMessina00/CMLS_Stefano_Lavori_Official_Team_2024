@@ -163,16 +163,7 @@ void DistFolderAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     // Alternatively, you can process the samples with the channels
     // interleaved by keeping the same state
 
-    float fold_amount = apvts.getRawParameterValue("Folder Amount")->load();
-    float dist_amount = apvts.getRawParameterValue("Distortion Amount")->load();
-    float dry_wet = apvts.getRawParameterValue("Dry/Wet")->load();
-
-    if (oscNew)
-    {
-        fold_amount = params[0];
-        dist_amount = params[1];
-        dry_wet = params[2];
-    }
+    settings = getSettings(apvts);
 
     
     for (float sample = 0; sample < buffer.getNumSamples(); ++sample)
@@ -182,7 +173,7 @@ void DistFolderAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
             float dry_sample = *buffer.getWritePointer(channel, sample);
 
 
-            *buffer.getWritePointer(channel, sample) *= fold_amount;
+            *buffer.getWritePointer(channel, sample) *= settings.fold_amount;
 
             while (abs(*buffer.getWritePointer(channel, sample)) > 1)
             {
@@ -199,9 +190,9 @@ void DistFolderAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
                 }
             }
 
-            *buffer.getWritePointer(channel, sample) = waveshaper.processSample(*buffer.getWritePointer(channel, sample) * dist_amount); //distortion implementation
+            *buffer.getWritePointer(channel, sample) = waveshaper.processSample(*buffer.getWritePointer(channel, sample) * settings.dist_amount); //distortion implementation
                      
-            *buffer.getWritePointer(channel, sample) = std::tanh(*buffer.getWritePointer(channel, sample) * dry_wet + dry_sample * (1.0f - dry_wet));
+            *buffer.getWritePointer(channel, sample) = std::tanh(*buffer.getWritePointer(channel, sample) * settings.dry_wet + dry_sample * (1.0f - settings.dry_wet));
         }
     }
 }
@@ -224,12 +215,22 @@ void DistFolderAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     // You should use this method to store your parameters in the memory block.
     // You could do that either as raw data, or use the XML or ValueTree classes
     // as intermediaries to make it easy to save and load complex data.
+    juce::MemoryOutputStream mos(destData, true);
+    apvts.state.writeToStream(mos);
 }
 
 void DistFolderAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
+
+    auto tree = juce::ValueTree::readFromData(data, sizeInBytes);
+	if (tree.isValid())
+	{
+		apvts.replaceState(tree);
+        settings = getSettings(apvts);
+	}
+    
 }
 
 void DistFolderAudioProcessor::oscMessageReceived(const juce::OSCMessage& message)
@@ -238,15 +239,23 @@ void DistFolderAudioProcessor::oscMessageReceived(const juce::OSCMessage& messag
     {
  /*       float fold_amt = message[0].getFloat32();
       std::cout << fold_amt <<std::endl;*/
-        params.set(0, message[0].getFloat32());
-        params.set(1, message[1].getFloat32());
-        params.set(2, message[2].getFloat32());
+        settings.fold_amount = message[0].getFloat32();
+        settings.dist_amount = message[1].getFloat32();
+        settings.dry_wet = message[2].getFloat32();
 
-        oscNew = true;
     }
 }
 
 
+PluginSettings getSettings(juce::AudioProcessorValueTreeState& apvts) {
+    PluginSettings settings;
+
+    settings.fold_amount = apvts.getRawParameterValue("Folder Amount")->load();
+    settings.dist_amount = apvts.getRawParameterValue("Distortion Amount")->load();
+    settings.dry_wet = apvts.getRawParameterValue("Dry/Wet")->load();
+
+    return settings;
+}
 
 juce::AudioProcessorValueTreeState::ParameterLayout
 DistFolderAudioProcessor::createParameterLayout()

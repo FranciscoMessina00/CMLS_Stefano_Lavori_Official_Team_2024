@@ -12,7 +12,19 @@
 
 #define MAX_DELAY_TIME 2
 
+struct PluginSettings
+{
+	float rate = 0.5f;
+	float depth = 0.5f;
+	float feedback = 0.5f;
+	float width = 0.5f;
+	float drywet = 0.5f;
+	float color = 0.5f;
+	float stereo = 0.5f;
+	int waveType = 0;
+};
 
+PluginSettings getSettings(juce::AudioProcessorValueTreeState& apvts);
 
 //==============================================================================
 /**
@@ -108,6 +120,17 @@ private:
 
     int circularBufferLength;
     int circularBufferWriteHead;
+
+  /*  int waveType;
+    float rate;
+    float depth;
+    float feedback;
+    float width;
+    float drywet;
+    float color;
+    float stereo;*/
+
+    PluginSettings settings;
 
     std::unique_ptr<float> circularBufferLeft = nullptr;
     std::unique_ptr<float> circularBufferRight = nullptr;

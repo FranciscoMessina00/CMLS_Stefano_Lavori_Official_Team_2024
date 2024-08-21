@@ -10,6 +10,14 @@
 
 #include <JuceHeader.h>
 
+struct PluginSettings {
+    float fold_amount{0};
+    float dist_amount{0};
+    float dry_wet{0};
+};
+
+PluginSettings getSettings(juce::AudioProcessorValueTreeState& apvts);
+
 //==============================================================================
 /**
 */
@@ -67,6 +75,7 @@ private:
     juce::Array<float> params;
 
     juce::dsp::WaveShaper<float> waveshaper;
+    PluginSettings settings;
 
     bool oscNew = false;
     

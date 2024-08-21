@@ -184,76 +184,63 @@ void FlangerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
 
 
     //juce::dsp::ProcessContextReplacing<float> leftContext(leftChannel);
+    settings = getSettings(apvts);
+    /*waveType    = apvts.getRawParameterValue("Wave Type")->load();
+    rate        = apvts.getRawParameterValue("Rate")->load();
+    depth       = apvts.getRawParameterValue("Depth")->load();
+    feedback    = apvts.getRawParameterValue("Feedback")->load();
+    width       = apvts.getRawParameterValue("Width")->load();
+    drywet      = apvts.getRawParameterValue("Dry/Wet")->load();
+    color       = apvts.getRawParameterValue("Color")->load();
+    stereo      = apvts.getRawParameterValue("Stereo")->load();*/
 
-    int waveType = apvts.getRawParameterValue("Wave Type")->load();
-    float rate = apvts.getRawParameterValue("Rate")->load();
-    float depth = apvts.getRawParameterValue("Depth")->load();
-    float feedback = apvts.getRawParameterValue("Feedback")->load();
-    float width = apvts.getRawParameterValue("Width")->load();
-    float drywet = apvts.getRawParameterValue("Dry/Wet")->load();
-    float color = apvts.getRawParameterValue("Color")->load();
-    float stereo = apvts.getRawParameterValue("Stereo")->load();
+    if (settings.feedback == 1)
+        settings.feedback = 0.95;
 
-    if(oscNew)
-    {
-        waveType = (int)params[0];
-        rate = params[1];
-        depth = params[2];
-        feedback = params[3];
-        width = params[4];
-        drywet = params[5];
-        color = params[6];
-        stereo = params[7];
-    
-        rate = juce::mapToLog10(rate / 100, 0.1f, 20000.0f);
-        width = juce::jmap(width, 0.0f, 100.0f, 0.001f, 0.015f);
-    }
-
-
-    if (feedback == 1)
-        feedback = 0.95;
-
-    if (waveType != 0)
-        rate *= 2;
+    if (settings.waveType != 0)
+        settings.rate *= 2;
     
 
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
 
         //LFO waveform selection
-        if (waveType == 0)
+        if (settings.waveType == 0)
             LFO_out = std::sin(2 * PI * LFO_phase);
-        else if (waveType == 1)
+        else if (settings.waveType == 1)
             LFO_out = squareWave(LFO_phase);
-        else if (waveType == 2)
+        else if (settings.waveType == 2)
             LFO_out = triangleWave(LFO_phase);
-        else if (waveType == 3)
+        else if (settings.waveType == 3)
             LFO_out = LFO_phase;
 
-        LFO_phase += rate / getSampleRate(); //update LFO phase
+        LFO_phase += settings.rate / getSampleRate(); //update LFO phase
 
         if (LFO_phase > 1.0f)
         {
             LFO_phase = -1.0f;
         }
 
-        LFO_out *= depth; //scale on depth
+        LFO_out *= settings.depth; //scale on depth
 
-        lfoOutMapped = juce::jmap(LFO_out, -1.0f, 1.0f, 0.000f, width); //map in ms
+        lfoOutMapped = juce::jmap(LFO_out, -1.0f, 1.0f, 0.000f, settings.width); //map in seconds
 
         //calculate delay time
-        delayTimeSmooth_l = delayTimeSmooth_l - 0.001 * (delayTimeSmooth_l - lfoOutMapped);
-        delayTimeSmooth_r = delayTimeSmooth_r - 0.001 * (delayTimeSmooth_r - lfoOutMapped - (0.005 * stereo));
-        delayTimeSamples_l = delayTimeSmooth_l * getSampleRate();
-        delayTimeSamples_r = delayTimeSmooth_r * getSampleRate();
+        //delayTimeSmooth_l = delayTimeSmooth_l - 0.001 * (delayTimeSmooth_l - lfoOutMapped);
+        //delayTimeSmooth_r = delayTimeSmooth_r - 0.001 * (delayTimeSmooth_r - lfoOutMapped - (0.005 * stereo));
+        //delayTimeSamples_l = delayTimeSmooth_l * getSampleRate();
+        //delayTimeSamples_r = delayTimeSmooth_r * getSampleRate();
+
+        delayTimeSamples_l = lfoOutMapped * getSampleRate();
+        delayTimeSamples_r = (lfoOutMapped + (0.005 * settings.stereo)) * getSampleRate();
 
         //add sample plus feedback to each circular buffer
         circularBufferLeft.get()[circularBufferWriteHead] = leftChannel.getSample(0,sample) + feedback_l;
         circularBufferRight.get()[circularBufferWriteHead] = rightChannel.getSample(0,sample) + feedback_r;
 
         //indexes to navigate circular buffer for delayed samples
-        delayReadHead_l = circularBufferWriteHead - delayTimeSamples_l;
-        delayReadHead_r = circularBufferWriteHead - delayTimeSamples_r;
+        delayReadHead_l = (circularBufferWriteHead - (int)delayTimeSamples_l) % circularBufferLength;
+        delayReadHead_r = (circularBufferWriteHead - (int)delayTimeSamples_r) % circularBufferLength;
 
         //wrapping
         if (delayReadHead_l < 0) {
@@ -264,33 +251,35 @@ void FlangerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         }
 
         //get the actual flanged samples
-        float delay_sample_left = std::tanh(circularBufferLeft.get()[(int)delayReadHead_l] + buffer.getSample(0, sample));
-        float delay_sample_right = std::tanh(circularBufferRight.get()[(int)delayReadHead_r] + buffer.getSample(1, sample));      
+        float delay_sample_left = std::tanh(circularBufferLeft.get()[(int)delayReadHead_l] /*+ buffer.getSample(0, sample)*/);
+        float delay_sample_right = std::tanh(circularBufferRight.get()[(int)delayReadHead_r] /*+ buffer.getSample(1, sample)*/);      
 
         //calculate feedbacks for next sample
-        feedback_l = delay_sample_left * feedback;
-        feedback_r = delay_sample_right * feedback;
+        feedback_l = delay_sample_left * settings.feedback;
+        feedback_r = delay_sample_right * settings.feedback;
         
         //overdrive feedback
         drive_l = std::pow(2, feedback_l) - 1;
         drive_r = std::pow(2, feedback_r) - 1;
 
-        feedback_l = (1 - color) * feedback_l + color * drive_l;
-        feedback_r = (1 - color) * feedback_r + color * drive_r;
+        feedback_l = (1 - settings.color) * feedback_l + settings.color * drive_l;
+        feedback_r = (1 - settings.color) * feedback_r + settings.color * drive_r;
         
         //smoothing on the outputs
-        l_smoother.setTargetValue(buffer.getSample(0, sample) * (1 - (drywet)) + delay_sample_left * (drywet));
-        r_smoother.setTargetValue(buffer.getSample(1, sample) * (1 - (drywet)) + delay_sample_right * (drywet));
+        l_smoother.setTargetValue(buffer.getSample(0, sample) * (1 - (settings.drywet)) + delay_sample_left * (settings.drywet));
+        r_smoother.setTargetValue(buffer.getSample(1, sample) * (1 - (settings.drywet)) + delay_sample_right * (settings.drywet));
 
         //set outputs
         leftChannel.setSample(0, sample, l_smoother.getNextValue());
         rightChannel.setSample(0, sample, r_smoother.getNextValue());
 
         //increment on buffer head for next cycle
-        circularBufferWriteHead++;
+        /*circularBufferWriteHead++;
         if (circularBufferWriteHead >= circularBufferLength) {
             circularBufferWriteHead = 0;
-        }  
+        }*/
+
+        circularBufferWriteHead = (circularBufferWriteHead + 1) % circularBufferLength;
     }
 }
 
@@ -312,12 +301,22 @@ void FlangerAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     // You should use this method to store your parameters in the memory block.
     // You could do that either as raw data, or use the XML or ValueTree classes
     // as intermediaries to make it easy to save and load complex data.
+
+    juce::MemoryOutputStream mos(destData, true);
+    apvts.state.writeToStream(mos);
 }
 
 void FlangerAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
+
+    auto tree = juce::ValueTree::readFromData(data, sizeInBytes);
+    if (tree.isValid())
+    {
+        apvts.replaceState(tree);
+        settings = getSettings(apvts);
+    }
 }
 
 //function to handle OSC messages
@@ -325,17 +324,38 @@ void FlangerAudioProcessor::oscMessageReceived(const juce::OSCMessage& message)
 {
     if (message.size() == 8)
     {
-        params.set(0, message[0].getFloat32());
-        params.set(1, message[1].getFloat32());
-        params.set(2, message[2].getFloat32());
-        params.set(3, message[3].getFloat32());
-        params.set(4, message[4].getFloat32());
-        params.set(5, message[5].getFloat32());
-        params.set(6, message[6].getFloat32());
-        params.set(7, message[7].getFloat32());
+        settings.waveType = (int)message[0].getFloat32();
+        settings.rate = message[1].getFloat32();
+        settings.depth = message[2].getFloat32();
+        settings.feedback = message[3].getFloat32();
+        settings.width = message[4].getFloat32();
+        settings.drywet = message[5].getFloat32();
+        settings.color = message[6].getFloat32();
+        settings.stereo = message[7].getFloat32();
 
-        oscNew = true;
-    }   
+        settings.rate = juce::mapToLog10(settings.rate / 100, 0.1f, 20000.0f);
+        settings.width = juce::jmap(settings.width, 0.0f, 100.0f, 0.001f, 0.015f);
+    }
+
+    
+        
+    
+}
+
+PluginSettings getSettings(juce::AudioProcessorValueTreeState& apvts)
+{
+	PluginSettings settings;
+
+	settings.waveType = apvts.getRawParameterValue("Wave Type")->load();
+	settings.rate = apvts.getRawParameterValue("Rate")->load();
+	settings.depth = apvts.getRawParameterValue("Depth")->load();
+	settings.feedback = apvts.getRawParameterValue("Feedback")->load();
+	settings.width = apvts.getRawParameterValue("Width")->load();
+	settings.drywet = apvts.getRawParameterValue("Dry/Wet")->load();
+	settings.color = apvts.getRawParameterValue("Color")->load();
+	settings.stereo = apvts.getRawParameterValue("Stereo")->load();
+
+	return settings;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout
